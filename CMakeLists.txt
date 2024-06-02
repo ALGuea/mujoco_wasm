@@ -5,7 +5,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/dist")
 project(mujoco_wasm)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O3 -fPIC -s USE_WEBGPU=1")
 
 set(CMAKE_INSTALL_PREFIX ${PROJECT_SOURCE_DIR})
 
@@ -17,3 +17,4 @@ include_directories(${MUJOCO_INSTALL_INCLUDE_DIR})
 link_directories(${MUJOCO_INSTALL_LIB_DIR})
 
 add_subdirectory(src)
+add_subdirectory(pluginSrc)
