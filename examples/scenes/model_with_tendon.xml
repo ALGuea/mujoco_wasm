@@ -1,57 +1,20 @@
-<mujoco model="sample_tactile_sensor">
-	<compiler autolimits="true"/>
+  <mujoco>
+  <extension>
+    <plugin plugin="pidController">
+      <instance name="pid1"><config key="kp" value="4.0"/></instance>
+    </plugin>
+  </extension>
 
+  <option gravity="0 0 0"/>
 
+  <worldbody>
+    <body>
+      <joint name="j1" type="slide"/>
+      <geom size="0.01"/>
+    </body>
+  </worldbody>
 
-<extension>
-	<plugin plugin="MujocoTactileSensorPlugin"/>
-</extension>
-
-<asset>
-	<texture name="floor" type="2d" builtin="checker" rgb1="0.1 0.2 0.3" rgb2="0.2 0.3 0.4" width="300" height="300" mark="edge" markrgb="0.2 0.3 0.4"/>
-	<material name="floor" texture="floor" texrepeat="10 10" texuniform="true"/>
-
-</asset>
-
-<statistic center="0 0 1" extent="1" meansize="0.1"/>
-
-
-<worldbody>
-<light pos="1 0 0.3" dir="-1 0 -0.3"/>
-<light pos="-1 0 0.3" dir="1 0 -0.3"/>
-
-
-
-<geom name="floor" type="plane" material="floor" size="1 1 0.01" pos="0 0 -0.01"/>
-
-
-<body name="object" pos="0 0 1">
-	<freejoint/>
-
-	<geom type="sphere" size="0.05" pos="0 0 0.3" rgba="1 0 0 .5"/>
-	<site name="tactile_sensor_frame" type="sphere" size="0.15" pos="0 0 0" euler="0 0 0"/>
-
-
-
-<!-- <geom type="cylinder" size="0.5" fromto="-0.2 0 0.5 0.2 0 0.5" mass="0.1" rgba="0.5 0.5 0.5 0.3"/> -->
-<!-- <site name="tactile_sensor_frame" pos="0 0 0" euler="0 0 0"/> -->
-</body>
-<body name="object2" pos="0 0 .1">
-
-<geom type="sphere" size="0.1" pos="0 0 0" rgba="1 0 0 1"/>
-
-
-
-</body>
-</worldbody>
-
-<sensor>
-	<plugin name="tactile_sensor" plugin="MujocoTactileSensorPlugin" objtype="site" objname="tactile_sensor_frame">
-		<config key="sensor_nums" value="1 1"/>
-		<config key="sensor_interval" value="0.02"/>
-		<!-- <config key="surface_radius" value="0.0"/> -->
-		<config key="surface_radius" value="0.2"/>
-		<config key="is_hex_grid" value="false"/>
-	</plugin>
-</sensor>
-</mujoco>
+  <actuator>
+    <plugin joint="j1" plugin="pidController" instance="pid1" />
+  </actuator>
+  </mujoco>

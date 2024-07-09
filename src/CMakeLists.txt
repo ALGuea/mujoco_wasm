@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.8)
 project(mujoco_wasm)
 
 # Set the C++ standard
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 # Define source files for the main executable
 set(SOURCE_FILES main.genned.cc)
@@ -23,13 +23,8 @@ set(CMAKE_REQUIRED_FLAGS "${EMCC_LINKER_FLAGS}")
 add_executable(mujoco_wasm ${SOURCE_FILES})
 set_target_properties(mujoco_wasm PROPERTIES LINK_FLAGS "${EMCC_LINKER_FLAGS}")
 
-  # # Add the TactileSensorPlugin library as a static library
-  # add_library(TactileSensorPluginStatic STATIC plugin.cpp)
-  # target_include_directories(TactileSensorPluginStatic PRIVATE ${MUJOCO_INCLUDE_DIR})
-  # target_link_libraries(TactileSensorPluginStatic PUBLIC mujoco)
-
-# Link libraries for the main module, including the static TactileSensorPluginStatic library
-target_link_libraries(mujoco_wasm ccd elasticity lodepng mujoco tinyxml2 qhullstatic_r TactileSensorPlugin)
+# Link libraries for the main module, including the static myCustomSensor library
+target_link_libraries(mujoco_wasm ccd elasticity lodepng mujoco tinyxml2 qhullstatic_r PidPlugin)
 
 # Install the main module
 install(TARGETS mujoco_wasm DESTINATION ${CMAKE_INSTALL_PREFIX}/dist)

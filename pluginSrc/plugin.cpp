@@ -1,13 +1,8 @@
 #include <mujoco/mjplugin.h>
+#include "Pid.h"
 
-#include <TactileSensor.h>
+namespace mujoco::plugin::actuator {
 
-namespace mujoco::plugin::sensor
-{
+mjPLUGIN_LIB_INIT { Pid::RegisterPlugin(); }
 
-  mjPLUGIN_LIB_INIT
-  {
-    TactileSensor::RegisterPlugin();
-  }
-
-} // namespace mujoco::plugin::sensor
+}  // namespace mujoco::plugin::actuator

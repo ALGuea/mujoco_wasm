@@ -19,10 +19,10 @@
 *.smod
 
 # Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
+# *.lai
+# *.la
+# *.a
+# *.lib
 
 # Executables
 *.exe
@@ -49,9 +49,9 @@ include/divisible/*
 
 build/**/*
 
-include/*
-lib/*
-bin/*
+# include/*
+# lib/*
+# bin/*
 test/test_runner
 .vscode
 .cache
