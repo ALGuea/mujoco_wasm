@@ -1,16 +1,21 @@
+import sys
+import functions
+import re  # This line imports the regular expressions module
+from ast_nodes import ValueType
+
 auto_gen_lines = {
     "model_definitions": [],
     "model_bindings"   : [],
     "model_typescript" : [],
     "model_enums"      : [],
-    "data_definitions" : [],
+    "data_definitions": [],
     "data_bindings"    : [],
     "data_typescript"  : [],
     "enums_typescript" : [],
-
 }
+
 parse_mode = (None, None)
-types_to_array_types = {"int":"Int32Array", "mjtNum":"Float64Array", "float": "Float32Array", "mjtByte": "Uint8Array", "char": "Uint8Array", "uintptr_t":"BigUint64Array"}
+types_to_array_types = {"int":"Int32Array", "mjtNum":"Float64Array", "float": "Float32Array", "mjtByte": "Uint8Array", "char": "Uint8Array", "uintptr_t":"BigUint64Array", "size_t":"BigUint64Array"}
 
 def parse_pointer_line(line:str, header_lines:list[str], mj_definitions:list[str], emscripten_bindings:list[str], typescript_definitions:list[str]):
     if "    X   (" in line:
@@ -18,22 +23,40 @@ def parse_pointer_line(line:str, header_lines:list[str], mj_definitions:list[str
     elif "    XMJV(" in line:
         elements = line.strip("    XMJV(").split(""")""")[0].strip().split(",")
     elements = [e.strip() for e in elements]
+    elements[0] = elements[0].replace("X(", "").replace("XMJV(", "").strip()
 
-    model_ptr = "m" if parse_mode[1] == "model" else "_model->ptr()"
-    if elements[3].startswith("MJ_M("):
-        elements[3] = model_ptr+"->"+elements[3][5:]
+    if len(elements) < 2:
+        print(f"Warning: Unexpected format in line: {line.strip()}")
+        return
+
+    type_, name = elements[:2]
+    size = elements[2] if len(elements) > 2 else "1"
+
     if parse_mode[1] == "model":
-        mj_definitions .append('  val  '+elements[1].ljust(22)+' () const { return val(typed_memory_view(m->'+elements[2].ljust(15)+' * '+elements[3].ljust(9)+', m->'+elements[1].ljust(22)+' )); }')
+        ptr = "m"
+        size_ptr = "m"
     else:
-        mj_definitions .append('  val  '+elements[1].ljust(22)+' () const { return val(typed_memory_view(_model->ptr()->'+elements[2].ljust(15)+' * '+elements[3].ljust(9)+', _state->ptr()->'+elements[1].ljust(22)+' )); }')
-    emscripten_bindings.append('      .property('+('"'+elements[1]+'"').ljust(24)+', &'+("Model" if parse_mode[1] == "model" else "Simulation")+'::'+elements[1].ljust(22)+')')
-    # Iterate through the original header file looking for comments
+        ptr = "_state->ptr()"
+        size_ptr = "_model->ptr()"
+
+    if size.startswith("MJ_M("):
+        size = f"{size_ptr}->{size[5:-1]}"
+    elif size.startswith("MJ_D("):
+        size = f"{ptr}->{size[5:-1]}"
+
+    # Reintegrate dynamic val entry creation
+    mj_definitions.append(f'  val  {name.ljust(22)} () const {{ return val(typed_memory_view({size_ptr}->{size} * 1, {ptr}->{name} )); }}')
+
+    emscripten_bindings.append(f'      .property("{name}", &{"Model" if parse_mode[1] == "model" else "Simulation"}::{name})')
     for model_line in header_lines:
-        if elements[0]+"* " in model_line and elements[1]+";" in model_line:
-            comment = model_line.split("//")[1].strip()
-            typescript_definitions.append("  /** "+ comment +"*/")
+        if f"{type_}* {name};" in model_line or f"{type_} {name};" in model_line:
+            comment = model_line.split("//")[1].strip() if "//" in model_line else ""
+            typescript_definitions.append(f"  /** {comment} */")
             break
-    typescript_definitions.append('  '+elements[1].ljust(22)+': '+types_to_array_types[elements[0]].rjust(12)+';')
+
+    typescript_definitions.append(f'  {name.ljust(22)}: {types_to_array_types.get(type_, "any").rjust(12)};')
+
+
 
 def parse_int_line(line:str, header_lines:list[str], mj_definitions:list[str], emscripten_bindings:list[str], typescript_definitions:list[str]):
     if "    X   (" in line:
@@ -45,27 +68,41 @@ def parse_int_line(line:str, header_lines:list[str], mj_definitions:list[str], e
 
     # Iterate through the file looking for comments
     for model_line in header_lines:
-        if "int " in model_line and name+";" in model_line:
-            comment = model_line.split("//")[1].strip()
-            typescript_definitions.append("  /** "+ comment +"*/")
+        if f"int {name};" in model_line:
+            comment = model_line.split("//")[1].strip() if "//" in model_line else ""
+            typescript_definitions.append(f"  /** {comment} */")
             break
 
-    typescript_definitions.append('  '+name.ljust(22)+': '+('number').rjust(12)+';')
+    typescript_definitions.append(f'  {name.ljust(22)}: {"number".rjust(12)};')
 
+def read_file(filename):
+    try:
+        with open(filename, 'r') as f:
+            return f.readlines()
+    except IOError:
+        print(f"Error: Unable to read file {filename}")
+        sys.exit(1)
 
-with open("include/mujoco/mjmodel.h") as f:
-    model_lines = f.readlines()
+model_lines = read_file("include/mujoco/mjmodel.h")
+data_lines = read_file("include/mujoco/mjdata.h")
+mjxmacro_lines = read_file("include/mujoco/mjxmacro.h")
 
-with open("include/mujoco/mjdata.h") as f:
-    data_lines = f.readlines()
-
+print("Parsing mjxmacro.h file...")  # Debug print
 
 # Parse mjx Macro to get the emscripten bindings and typescript definitions
-with open("include/mujoco/mjxmacro.h") as f:
-    lines = f.readlines()
-
-    for line in lines:
-        if parse_mode[0] != None:
+for line in mjxmacro_lines:
+    if "#define MJMODEL_INTS" in line:
+        print("Found MJMODEL_INTS")  # Debug print
+        parse_mode = ("ints", "model")
+    elif "#define MJMODEL_POINTERS" in line:
+        print("Found MJMODEL_POINTERS")  # Debug print
+        parse_mode = ("pointers", "model")
+    elif "#define MJDATA_POINTERS" in line:
+        print("Found MJDATA_POINTERS")  # Debug print
+        parse_mode = ("pointers", "data")
+    
+    if parse_mode[0] is not None:
+        if line.strip().startswith(("X(", "XMJV(")):
             if parse_mode[0] == "pointers":
                 if line.strip().startswith("X   (") or line.strip().startswith("XMJV("):
                     parse_pointer_line(line, 
@@ -86,17 +123,9 @@ with open("include/mujoco/mjxmacro.h") as f:
                 else:
                     parse_mode = (None, None)
 
-        if "#define MJMODEL_INTS" in line:
-            parse_mode = ("ints", "model")
-        if "#define MJMODEL_POINTERS" in line:
-            parse_mode = ("pointers", "model")
-        if "#define MJDATA_POINTERS" in line:
-            parse_mode = ("pointers", "data")
+print("Finished parsing mjxmacro.h file")  # Debug print
 
-import functions
-from ast_nodes import ValueType
 for function in functions.FUNCTIONS:
-    #print("Function:", function)
     param_types = [param.decltype for param in functions.FUNCTIONS[function].parameters]
     name = function[3:] if function != "mj_crb" else function[3:] + "Calculate"
     function_def = "  void "+name.ljust(22)+"() { "+function.ljust(28)+"("
@@ -117,10 +146,8 @@ for function in functions.FUNCTIONS:
             def_params.append(param.name+".c_str()")
             def_typescript.append(param.name + " : string")
         elif("mjtNum *" in param.decltype):
-            def_args  .append("val "+param.name)#(str(param)) # UNTESTED, WE DON'T KNOW IF THIS WORKS
-            #def_params.append(param.name +'["buffer"].as<mjtNum*>()')
-            #def_params.append('reinterpret_cast<mjtNum*>('+param.name +')') #.global("byteOffset").as<unsigned>()
-            def_params.append('reinterpret_cast<mjtNum*>('+param.name+'["byteOffset"].as<int>())') #.global("byteOffset").as<unsigned>()
+            def_args  .append("val "+param.name)
+            def_params.append('reinterpret_cast<mjtNum*>('+param.name+'["byteOffset"].as<int>())')
             def_typescript.append(param.name + " : Float64Array")
             need_raw_pinters = True
         elif (not ("*" in param_type) and not ("[" in param_type) and not (param_type == "mjfPluginLibraryLoadCallback")):
@@ -137,13 +164,12 @@ for function in functions.FUNCTIONS:
             return_decl = "std::string"
             to_return = "std::string(" + to_return + ")"
         auto_gen_lines["data_definitions"].append("  "+return_decl.ljust(6)+" "+name.ljust(20)+"("+(", ".join(def_args)).ljust(20)+") { return "+to_return+"); }")
-        auto_gen_lines["data_bindings"   ].append('      .function('+('"'+name+'"').ljust(23)+' , &Simulation::'+name.ljust(22)+(')'if not need_raw_pinters else ', allow_raw_pointers())')) #<arg<mjtNum*>>
+        auto_gen_lines["data_bindings"   ].append('      .function('+('"'+name+'"').ljust(23)+' , &Simulation::'+name.ljust(22)+(')'if not need_raw_pinters else ', allow_raw_pointers())'))
         auto_gen_lines["data_typescript" ].append("  /** "+ functions.FUNCTIONS[function].doc + ("    [Only works with MuJoCo Allocated Arrays!]" if need_raw_pinters else "") +"*/")
         returnType = functions.FUNCTIONS[function].return_type
         returnType = returnType.inner_type.name if "*" in returnType.decl() else returnType.name
         returnType = returnType.replace("mjtNum","number").replace("int","number").replace("float","number").replace("char", "string")
         auto_gen_lines["data_typescript" ].append('  '+name.ljust(22)+'('+", ".join(def_typescript)+'): '+returnType+';')
-
 
 # Parse mjmodel.h for enums
 cur_enum_name = None
@@ -164,7 +190,6 @@ for line in model_lines:
             auto_gen_lines["enums_typescript"].append("    /** "+potatos.ljust(40)+" */")
             auto_gen_lines["enums_typescript"].append("    "+meat.ljust(25)+",")
 
-
     if line.startswith("typedef enum"):
         cur_enum_name = line.split(" ")[2][:-1]
         auto_gen_lines["model_enums"].append('  enum_<'+cur_enum_name+'>("'+cur_enum_name+'")')
@@ -172,24 +197,39 @@ for line in model_lines:
             auto_gen_lines["enums_typescript"].append("/** "+line.split("//")[1].ljust(40)+" */")
         auto_gen_lines["enums_typescript"].append("export enum "+cur_enum_name +" {")
 
-# Insert our auto-generated bindings into our template files
-with open("src/main.template.cc") as f:
-    content = f.read()
-    content = content.replace("// MJMODEL_DEFINITIONS", "// MJMODEL_DEFINITIONS\n"+"\n".join(auto_gen_lines["model_definitions"]))
-    content = content.replace("// MJMODEL_BINDINGS"   , "// MJMODEL_BINDINGS\n"   +"\n".join(auto_gen_lines["model_bindings"]))
+def replace_in_file(input_filename, output_filename, replacements):
+    try:
+        with open(input_filename, 'r') as f:
+            content = f.read()
 
-    content = content.replace("// MJDATA_DEFINITIONS", "// MJDATA_DEFINITIONS\n"+"\n".join(auto_gen_lines["data_definitions"]))
-    content = content.replace("// MJDATA_BINDINGS"   , "// MJDATA_BINDINGS\n"+"\n".join(auto_gen_lines["data_bindings"]))
+        for placeholder, replacement in replacements.items():
+            if placeholder not in content:
+                print(f"Warning: Placeholder {placeholder} not found in {input_filename}")
+            content = content.replace(placeholder, f"{placeholder}\n{replacement}")
 
-    content = content.replace("// MODEL_ENUMS", "// MODEL_ENUMS\n"+"\n".join(auto_gen_lines["model_enums"]))
+        with open(output_filename, 'w') as f:
+            f.write(content)
 
-    with open("src/main.genned.cc", mode="w") as f:
-        f.write(content)
+        print(f"Successfully wrote to {output_filename}")
+    except IOError as e:
+        print(f"Error: Unable to read or write file: {e}")
+        sys.exit(1)
 
-with open("src/mujoco_wasm.template.d.ts") as f:
-    content = f.read()
-    content = content.replace("// MODEL_INTERFACE", "// MODEL_INTERFACE\n"+"\n".join(auto_gen_lines["model_typescript"]))
-    content = content.replace("// DATA_INTERFACE" , "// DATA_INTERFACE\n" +"\n".join(auto_gen_lines[ "data_typescript"]))
-    content = content.replace("// ENUMS" , "// ENUMS\n" +"\n".join(auto_gen_lines[ "enums_typescript"]))
-    with open("dist/mujoco_wasm.d.ts", mode="w") as f:
-        f.write(content)
+replace_in_file("src/main.template.cc", "src/main.genned.cc", {
+    "// MJMODEL_DEFINITIONS": "\n".join(auto_gen_lines["model_definitions"]),
+    "// MJMODEL_BINDINGS": "\n".join(auto_gen_lines["model_bindings"]),
+    "// MJDATA_DEFINITIONS": "\n".join(auto_gen_lines["data_definitions"]),
+    "// MJDATA_BINDINGS": "\n".join(auto_gen_lines["data_bindings"]),
+    "// MODEL_ENUMS": "\n".join(auto_gen_lines["model_enums"]),
+})
+
+replace_in_file("src/mujoco_wasm.template.d.ts", "dist/mujoco_wasm.d.ts", {
+    "// MODEL_INTERFACE": "\n".join(auto_gen_lines["model_typescript"]),
+    "// DATA_INTERFACE": "\n".join(auto_gen_lines["data_typescript"]),
+    "// ENUMS": "\n".join(auto_gen_lines["enums_typescript"]),
+})
+
+# Print debug information
+for key, value in auto_gen_lines.items():
+    print(f"{key}: {len(value)} lines generated")
+

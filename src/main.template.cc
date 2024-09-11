@@ -255,7 +255,6 @@ EMSCRIPTEN_BINDINGS(mujoco_wasm) {
       //.field("o_solref"          , &mjOption::o_solref)          // solref
       //.field("o_solimp"          , &mjOption::o_solimp)          // solimp
       .field("integrator"          , &mjOption::integrator)        // integration mode (mjtIntegrator)
-      .field("collision"           , &mjOption::collision)         // collision mode (mjtCollision)
       .field("cone"                , &mjOption::cone)              // type of friction cone (mjtCone)
       .field("jacobian"            , &mjOption::jacobian)          // type of Jacobian (mjtJacobian)
       .field("solver"              , &mjOption::solver)            // solver algorithm (mjtSolver)
