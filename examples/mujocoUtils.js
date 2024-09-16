@@ -281,7 +281,7 @@ export async function loadSceneFromURL(mujoco, filename, parent) {
 
     let model = parent.model;
     let state = parent.state;
-    let simulation = parent.simulation;
+  let simulation = parent.simulation;
 
     // Decode the null-terminated string names.
     let textDecoder = new TextDecoder("utf-8");
@@ -302,7 +302,7 @@ export async function loadSceneFromURL(mujoco, filename, parent) {
 
     // Default material definition.
     let material = new THREE.MeshPhysicalMaterial();
-    material.color = new THREE.Color(1, 1, 1);
+  material.color = new THREE.Color(1, 1, 1);
 
     // Loop through the MuJoCo geoms and recreate them in three.js.
     for (let g = 0; g < model.ngeom; g++) {
@@ -582,6 +582,9 @@ export async function downloadExampleScenesFolder(mujoco) {
     "simple.xml",
     "slider_crank.xml",
     "model_with_tendon.xml",
+    "libTactileSensor.so",
+    "libmujoco.so",
+    "libmujoco.so.2.3.5"
   ];
 
   let requests = allFiles.map((url) => fetch("./examples/scenes/" + url));

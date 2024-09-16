@@ -1,16 +1,18 @@
   <mujoco>
   <extension>
     <plugin plugin="pidController">
-      <instance name="pid1"><config key="kp" value="4.0"/></instance>
+      <instance name="pid1">
+        <config key="kp" value="20"/>
+        <config key="ki" value="15"/>
+        <config key="kd" value="7"/>
+      </instance>
     </plugin>
   </extension>
 
-  <option gravity="0 0 0"/>
-
   <worldbody>
     <body>
-      <joint name="j1" type="slide"/>
-      <geom size="0.01"/>
+      <joint name="j1" type="slide" axis="1 0 0"/>
+      <geom size="0.1"/>
     </body>
   </worldbody>
 
