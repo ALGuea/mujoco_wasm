@@ -1,195 +1,130 @@
-auto_gen_lines = {
-    "model_definitions": [],
-    "model_bindings"   : [],
-    "model_typescript" : [],
-    "model_enums"      : [],
-    "data_definitions" : [],
-    "data_bindings"    : [],
-    "data_typescript"  : [],
-    "enums_typescript" : [],
+import re
 
-}
-parse_mode = (None, None)
-types_to_array_types = {"int":"Int32Array", "mjtNum":"Float64Array", "float": "Float32Array", "mjtByte": "Uint8Array", "char": "Uint8Array", "uintptr_t":"BigUint64Array"}
+def parse_references(filename):
+    with open(filename, 'r') as f:
+        content = f.read()
+    
+    types = {}
+    structs = re.findall(r'struct\s+(\w+)_\s*{([\s\S]*?)};', content)
+    for struct_name, struct_content in structs:
+        fields = re.findall(r'\s*(\w+(?:\s*\*)?)\s+(\w+)(?:\[([^\]]+)\])?;', struct_content)
+        for field_type, field_name, array_size in fields:
+            types[f"{struct_name}.{field_name}"] = (field_type, array_size)
+    
+    return types
 
-def parse_pointer_line(line:str, header_lines:list[str], mj_definitions:list[str], emscripten_bindings:list[str], typescript_definitions:list[str]):
-    if "    X   (" in line:
-        elements = line.strip("    X   (").split(""")""")[0].strip().split(",")
-    elif "    XMJV(" in line:
-        elements = line.strip("    XMJV(").split(""")""")[0].strip().split(",")
-    elements = [e.strip() for e in elements]
+def get_array_type(field_type):
+    array_types = {
+        "int": "Int32Array",
+        "mjtNum": "Float64Array",
+        "float": "Float32Array",
+        "mjtByte": "Uint8Array",
+        "char": "Uint8Array",
+        "uintptr_t": "BigUint64Array"
+    }
+    return array_types.get(field_type.rstrip('*'), "Float64Array")
 
-    model_ptr = "m" if parse_mode[1] == "model" else "_model->ptr()"
-    if elements[3].startswith("MJ_M("):
-        elements[3] = model_ptr+"->"+elements[3][5:]
-    if parse_mode[1] == "model":
-        mj_definitions .append('  val  '+elements[1].ljust(22)+' () const { return val(typed_memory_view(m->'+elements[2].ljust(15)+' * '+elements[3].ljust(9)+', m->'+elements[1].ljust(22)+' )); }')
-    else:
-        mj_definitions .append('  val  '+elements[1].ljust(22)+' () const { return val(typed_memory_view(_model->ptr()->'+elements[2].ljust(15)+' * '+elements[3].ljust(9)+', _state->ptr()->'+elements[1].ljust(22)+' )); }')
-    emscripten_bindings.append('      .property('+('"'+elements[1]+'"').ljust(24)+', &'+("Model" if parse_mode[1] == "model" else "Simulation")+'::'+elements[1].ljust(22)+')')
-    # Iterate through the original header file looking for comments
-    for model_line in header_lines:
-        if elements[0]+"* " in model_line and elements[1]+";" in model_line:
-            comment = model_line.split("//")[1].strip()
-            typescript_definitions.append("  /** "+ comment +"*/")
-            break
-    typescript_definitions.append('  '+elements[1].ljust(22)+': '+types_to_array_types[elements[0]].rjust(12)+';')
+def parse_mjxmacro(filename):
+    with open(filename, 'r') as f:
+        content = f.read()
 
-def parse_int_line(line:str, header_lines:list[str], mj_definitions:list[str], emscripten_bindings:list[str], typescript_definitions:list[str]):
-    if "    X   (" in line:
-        name = line.strip("    X   (").split(""")""")[0].strip()
-    elif "    XMJV(" in line:
-        name = line.strip("    XMJV(").split(""")""")[0].strip()
-    mj_definitions     .append('  int  '+name.ljust(14)+'() const { return m->'+name.ljust(14)+'; }')
-    emscripten_bindings.append('      .property('+('"'+name+'"').ljust(24)+', &Model::'+name.ljust(22)+')')
+    model_definitions = []
+    model_bindings = []
+    data_definitions = []
+    data_bindings = []
+    enums = []
 
-    # Iterate through the file looking for comments
-    for model_line in header_lines:
-        if "int " in model_line and name+";" in model_line:
-            comment = model_line.split("//")[1].strip()
-            typescript_definitions.append("  /** "+ comment +"*/")
-            break
+    # Helper function to determine if the field is a pointer or listed in the pointers macro
+    def is_pointer_or_in_pointers_macro(field_name, pointers_macro_content):
+        return any(field_name in line for line in pointers_macro_content)
 
-    typescript_definitions.append('  '+name.ljust(22)+': '+('number').rjust(12)+';')
+    # Parse MJMODEL_INTS and MJMODEL_POINTERS
+    model_macros = re.findall(r'#define MJMODEL_(\w+)\s+\\([\s\S]*?)\n\n', content)
+    model_pointers_macro = next((macro_content for macro_name, macro_content in model_macros if macro_name == 'POINTERS'), '').strip().split('\n')
 
-
-with open("include/mujoco/mjmodel.h") as f:
-    model_lines = f.readlines()
-
-with open("include/mujoco/mjdata.h") as f:
-    data_lines = f.readlines()
-
-
-# Parse mjx Macro to get the emscripten bindings and typescript definitions
-with open("include/mujoco/mjxmacro.h") as f:
-    lines = f.readlines()
-
-    for line in lines:
-        if parse_mode[0] != None:
-            if parse_mode[0] == "pointers":
-                if line.strip().startswith("X   (") or line.strip().startswith("XMJV("):
-                    parse_pointer_line(line, 
-                                       model_lines if parse_mode[1] == "model" else data_lines, 
-                                       auto_gen_lines[parse_mode[1]+"_definitions"], 
-                                       auto_gen_lines[parse_mode[1]+"_bindings"], 
-                                       auto_gen_lines[parse_mode[1]+"_typescript"])
+    print(f"Found {len(model_macros)} MJMODEL macros")
+    for macro_name, macro_content in model_macros:
+        print(f"Processing MJMODEL_{macro_name}:")
+        print(macro_content)
+        lines = macro_content.strip().split('\n')
+        for line in lines:
+            match = re.match(r'\s*X\s*\(\s*(\w+)\s*,\s*(\w+)\s*([,\)])\s*(\w+)?', line)
+            if match:
+                type_, name, _, size = match.groups()
+                size = size if size else '1'
+                if type_.endswith('*') or is_pointer_or_in_pointers_macro(name, model_pointers_macro):
+                    model_definitions.append(f"val  {name}() const {{ return val(typed_memory_view(m->{size}, m->{name})); }}")
+                    model_bindings.append(f'.property("{name}", &Model::{name})')
                 else:
-                    parse_mode = (None, None)
+                    model_definitions.append(f"{type_}  {name}() const {{ return m->{name}; }}")
+                    model_bindings.append(f'.property("{name}", &Model::{name})')
 
-            if parse_mode[0] == "ints":
-                if line.strip().startswith("X   (") or line.strip().startswith("XMJV("):
-                    parse_int_line(line, 
-                                   model_lines if parse_mode[1] == "model" else data_lines, 
-                                   auto_gen_lines[parse_mode[1]+"_definitions"], 
-                                   auto_gen_lines[parse_mode[1]+"_bindings"], 
-                                   auto_gen_lines[parse_mode[1]+"_typescript"])
+    print(f"Generated {len(model_definitions)} model definitions")
+
+    # Parse MJDATA_POINTERS
+    data_macro = re.search(r'#define MJDATA_POINTERS\s+\\([\s\S]*?)\n\n', content)
+    data_pointers_macro_content = data_macro.group(1).strip().split('\n') if data_macro else []
+
+    if data_macro:
+        lines = data_macro.group(1).strip().split('\n')
+        for line in lines:
+            match = re.match(r'\s*X\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)', line)
+            if match:
+                type_, name, size1, size2 = match.groups()
+                if type_.endswith('*') or is_pointer_or_in_pointers_macro(name, data_pointers_macro_content):
+                    data_definitions.append(f"val  {name}() const {{ return val(typed_memory_view(_model->ptr()->{size1} * {size2}, _state->ptr()->{name})); }}")
+                    data_bindings.append(f'.property("{name}", &Simulation::{name})')
                 else:
-                    parse_mode = (None, None)
+                    data_definitions.append(f"{type_}  {name}() const {{ return _state->ptr()->{name}; }}")
+                    data_bindings.append(f'.property("{name}", &Simulation::{name})')
 
-        if "#define MJMODEL_INTS" in line:
-            parse_mode = ("ints", "model")
-        if "#define MJMODEL_POINTERS" in line:
-            parse_mode = ("pointers", "model")
-        if "#define MJDATA_POINTERS" in line:
-            parse_mode = ("pointers", "data")
+    print(f"Generated {len(data_definitions)} data definitions")
 
-import functions
-from ast_nodes import ValueType
-for function in functions.FUNCTIONS:
-    #print("Function:", function)
-    param_types = [param.decltype for param in functions.FUNCTIONS[function].parameters]
-    name = function[3:] if function != "mj_crb" else function[3:] + "Calculate"
-    function_def = "  void "+name.ljust(22)+"() { "+function.ljust(28)+"("
-    def_args   = []
-    def_params = []
-    def_typescript = []
-    need_raw_pinters = False
-    return_decl = functions.FUNCTIONS[function].return_type.decl()
-    valid_function = return_decl == "const char *" or (not ("*" in return_decl) and not ("[" in return_decl))
-    for param in functions.FUNCTIONS[function].parameters:
-        param_type = param.type.decl()
-        if(param.decltype == "const mjModel *"):
-            def_params.append("_model->ptr()")
-        elif(param.decltype == "mjData *"):
-            def_params.append("_state->ptr()")
-        elif(param.decltype == "const char *"):
-            def_args  .append("std::string "+param.name)
-            def_params.append(param.name+".c_str()")
-            def_typescript.append(param.name + " : string")
-        elif("mjtNum *" in param.decltype):
-            def_args  .append("val "+param.name)#(str(param)) # UNTESTED, WE DON'T KNOW IF THIS WORKS
-            #def_params.append(param.name +'["buffer"].as<mjtNum*>()')
-            #def_params.append('reinterpret_cast<mjtNum*>('+param.name +')') #.global("byteOffset").as<unsigned>()
-            def_params.append('reinterpret_cast<mjtNum*>('+param.name+'["byteOffset"].as<int>())') #.global("byteOffset").as<unsigned>()
-            def_typescript.append(param.name + " : Float64Array")
-            need_raw_pinters = True
-        elif (not ("*" in param_type) and not ("[" in param_type) and not (param_type == "mjfPluginLibraryLoadCallback")):
-            def_args  .append(str(param))
-            def_params.append(param.name)
-            param_type = param_type.replace("mjtNum","number").replace("int","number").replace("float","number").replace("size_t", "number").replace("unsigned char", "string")
-            def_typescript.append(param.name + " : " + param_type)
-        else:
-            valid_function = False
-    if valid_function:
-        is_string = False
-        to_return = function.ljust(28)+"("+(", ".join(def_params)).ljust(20)
-        if return_decl == "const char *":
-            return_decl = "std::string"
-            to_return = "std::string(" + to_return + ")"
-        auto_gen_lines["data_definitions"].append("  "+return_decl.ljust(6)+" "+name.ljust(20)+"("+(", ".join(def_args)).ljust(20)+") { return "+to_return+"); }")
-        auto_gen_lines["data_bindings"   ].append('      .function('+('"'+name+'"').ljust(23)+' , &Simulation::'+name.ljust(22)+(')'if not need_raw_pinters else ', allow_raw_pointers())')) #<arg<mjtNum*>>
-        auto_gen_lines["data_typescript" ].append("  /** "+ functions.FUNCTIONS[function].doc + ("    [Only works with MuJoCo Allocated Arrays!]" if need_raw_pinters else "") +"*/")
-        returnType = functions.FUNCTIONS[function].return_type
-        returnType = returnType.inner_type.name if "*" in returnType.decl() else returnType.name
-        returnType = returnType.replace("mjtNum","number").replace("int","number").replace("float","number").replace("char", "string")
-        auto_gen_lines["data_typescript" ].append('  '+name.ljust(22)+'('+", ".join(def_typescript)+'): '+returnType+';')
+    # Parse enums
+    enum_matches = re.findall(r'typedef enum\s*_?mj(\w+)\s*{([\s\S]*?)}\s*mj\w+;', content)
+    print(f"Found {len(enum_matches)} enums")
+    for enum_name, enum_content in enum_matches:
+        enum_values = re.findall(r'(\w+)\s*[,=]', enum_content)
+        enum_def = f"enum_<mj{enum_name}>(\"mj{enum_name}\")\n"
+        for value in enum_values:
+            enum_def += f'    .value("{value}", mj{enum_name}::{value})\n'
+        enum_def += ";"
+        enums.append(enum_def)
+
+    return model_definitions, model_bindings, data_definitions, data_bindings, enums
+
+def generate_main_cc(template_file, output_file, model_defs, model_bindings, data_defs, data_bindings, enums):
+    with open(template_file, 'r') as f:
+        template = f.readlines()
+
+    output_lines = []
+    for line in template:
+        output_lines.append(line)
+        if "// MJMODEL_DEFINITIONS" in line:
+            output_lines.extend(model_def + '\n' for model_def in model_defs)
+        elif "// MJMODEL_BINDINGS" in line:
+            output_lines.extend(model_binding + '\n' for model_binding in model_bindings)
+        elif "// MJDATA_DEFINITIONS" in line:
+            output_lines.extend(data_def + '\n' for data_def in data_defs)
+        elif "// MJDATA_BINDINGS" in line:
+            output_lines.extend(data_binding + '\n' for data_binding in data_bindings)
+        elif "// MODEL_ENUMS" in line:
+            output_lines.extend(enum + '\n' for enum in enums)
+
+    with open(output_file, 'w') as f:
+        f.writelines(output_lines)
+
+    print(f"Generated {output_file} with {len(output_lines)} lines")
+if __name__ == "__main__":
+    mjxmacro_file = "include/mujoco/mjxmacro.h"
+    template_file = "src/main.template.cc"
+    output_file = "src/main.genned.cc"
+
+    
+    # Usage
+    
+    model_definitions, model_bindings, data_definitions, data_bindings, enums = parse_mjxmacro(mjxmacro_file)
+    generate_main_cc(template_file, output_file, model_definitions, model_bindings, data_definitions, data_bindings, enums)
 
 
-# Parse mjmodel.h for enums
-cur_enum_name = None
-for line in model_lines:
-    line = line.strip()
-
-    if cur_enum_name is not None and line.startswith("}"):
-        cur_enum_name = None
-        auto_gen_lines["model_enums"].append('  ;')
-        auto_gen_lines["enums_typescript"].append( "}")
-
-    if cur_enum_name is not None and len(line) > 0:
-        parts = line.split("//")
-        parts = [part.strip() for part in parts]
-        if len(parts[0]) > 0 and len(parts[0].split(" ")) > 0:
-            meat = parts[0].split(" ")[0].split(",")[0]; potatos = parts[1]
-            auto_gen_lines["model_enums"].append('      .value('+('"'+meat+'"').ljust(25)+', '+cur_enum_name.ljust(25)+'::'+meat.ljust(25)+')')
-            auto_gen_lines["enums_typescript"].append("    /** "+potatos.ljust(40)+" */")
-            auto_gen_lines["enums_typescript"].append("    "+meat.ljust(25)+",")
-
-
-    if line.startswith("typedef enum"):
-        cur_enum_name = line.split(" ")[2][:-1]
-        auto_gen_lines["model_enums"].append('  enum_<'+cur_enum_name+'>("'+cur_enum_name+'")')
-        if len(line.split("//")) > 1:
-            auto_gen_lines["enums_typescript"].append("/** "+line.split("//")[1].ljust(40)+" */")
-        auto_gen_lines["enums_typescript"].append("export enum "+cur_enum_name +" {")
-
-# Insert our auto-generated bindings into our template files
-with open("src/main.template.cc") as f:
-    content = f.read()
-    content = content.replace("// MJMODEL_DEFINITIONS", "// MJMODEL_DEFINITIONS\n"+"\n".join(auto_gen_lines["model_definitions"]))
-    content = content.replace("// MJMODEL_BINDINGS"   , "// MJMODEL_BINDINGS\n"   +"\n".join(auto_gen_lines["model_bindings"]))
-
-    content = content.replace("// MJDATA_DEFINITIONS", "// MJDATA_DEFINITIONS\n"+"\n".join(auto_gen_lines["data_definitions"]))
-    content = content.replace("// MJDATA_BINDINGS"   , "// MJDATA_BINDINGS\n"+"\n".join(auto_gen_lines["data_bindings"]))
-
-    content = content.replace("// MODEL_ENUMS", "// MODEL_ENUMS\n"+"\n".join(auto_gen_lines["model_enums"]))
-
-    with open("src/main.genned.cc", mode="w") as f:
-        f.write(content)
-
-with open("src/mujoco_wasm.template.d.ts") as f:
-    content = f.read()
-    content = content.replace("// MODEL_INTERFACE", "// MODEL_INTERFACE\n"+"\n".join(auto_gen_lines["model_typescript"]))
-    content = content.replace("// DATA_INTERFACE" , "// DATA_INTERFACE\n" +"\n".join(auto_gen_lines[ "data_typescript"]))
-    content = content.replace("// ENUMS" , "// ENUMS\n" +"\n".join(auto_gen_lines[ "enums_typescript"]))
-    with open("dist/mujoco_wasm.d.ts", mode="w") as f:
-        f.write(content)
+    print(f"Generated {output_file}")
