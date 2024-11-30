@@ -9,58 +9,10 @@ import   load_mujoco        from '../dist/mujoco_wasm.js';
 // Load the MuJoCo Module
 const mujoco = await load_mujoco();
 
-// Load the Mujoco WASM module
-// Load the Mujoco WASM module
-// fetch('/dist/mujoco_wasm.wasm')
-//   .then(response => response.arrayBuffer())
-//   .then(buffer => WebAssembly.instantiate(buffer, {
-//     env: {
-//       // Provide the necessary imports here
-//       memory: new WebAssembly.Memory({ initial: 256, maximum: 512 }),
-//       table: new WebAssembly.Table({ initial: 0, element: 'anyfunc' }),
-//       abort: console.error
-//     }
-//   }))
-//   .then(wasmModule => {
-//     const mujocoWASM = wasmModule.instance;
-
-//     // Setup the filesystem and load the dynamic library
-//     FS.mkdir('/libs');
-//     FS.mount(MEMFS, {}, '/libs');
-
-//     fetch('dist/libTactileSensor.so')
-//       .then(response => response.arrayBuffer())
-//       .then(libBuffer => {
-//         const lib = new Uint8Array(libBuffer);
-//         const libName = '/libs/libTactileSensor.so';
-//         FS.writeFile(libName, lib);
-
-//         // Use dlopen to load the library
-//         const libPtr = mujocoWASM.exports.dlopen(libName, 0);
-//         if (!libPtr) {
-//           console.error('Error in loading dynamic library:', FS.errno);
-//           return;
-//         }
-
-//         // Now you can use dlsym to get function pointers from the library
-//         const functionName = mujocoWASM.exports.allocateUTF8('function_name_in_library');
-//         const functionPtr = mujocoWASM.exports.dlsym(libPtr, functionName);
-
-//         // Use the function pointer as needed
-//         // For example, if it's a function taking no arguments and returning an int:
-//         const result = mujocoWASM.exports.dynCall_ii(functionPtr);
-//         console.log('Result from dynamic library function:', result);
-
-//         // Don't forget to free the allocated memory
-//         mujocoWASM.exports._free(functionName);
-//       })
-//       .catch(err => console.error('Error loading dynamic library:', err));
-//   })
-//   .catch(err => console.error('Error loading WASM module:', err));
 
 
 // Set up Emscripten's Virtual File System
-var initialScene = "model_with_tendon.xml";
+var initialScene = "simple.xml";
 mujoco.FS.mkdir('/working');
 mujoco.FS.mount(mujoco.MEMFS, { root: '.' }, '/working');
 mujoco.FS.writeFile("/working/" + initialScene, await (await fetch("./examples/scenes/" + initialScene)).text());

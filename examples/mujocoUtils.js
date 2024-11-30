@@ -581,10 +581,7 @@ export async function downloadExampleScenesFolder(mujoco) {
     "shadow_hand/scene_right.xml",
     "simple.xml",
     "slider_crank.xml",
-    "model_with_tendon.xml",
-    "libTactileSensor.so",
-    "libmujoco.so",
-    "libmujoco.so.2.3.5"
+    "model_with_tendon.xml"
   ];
 
   let requests = allFiles.map((url) => fetch("./examples/scenes/" + url));
